@@ -1,8 +1,7 @@
 # databio/actions
 
 Shared GitHub Actions code for lab repositories. Anything here can be called
-from any repo, public or private, in any org (databio, pepkit, refgenie,
-bedbase). This repo is public: it must hold no secrets and nothing private.
+from any repo, public or private, in any org. This repo is public: it must hold no secrets and nothing private.
 A called workflow runs inside the calling repo's job and uses the caller's
 secrets.
 
