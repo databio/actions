@@ -1,0 +1,72 @@
+name: Notify doc hub
+
+# Reusable workflow: a spoke repo calls this when its docs change, and it fires
+# a `docs-updated` repository_dispatch at databio/doc-hubs, whose deploy.yml
+# routes on the `site` key and rebuilds that one site.
+#
+# Spokes hold NO dispatch logic. A spoke's notify-docs.yml names its site and
+# spoke and nothing else; the endpoint, the event type, and the payload shape
+# live here. The payload is consumed by doc-hubs' deploy.yml, so changing it
+# means editing this file and that one together.
+#
+# Why this lives in databio/actions and not in doc-hubs: doc-hubs is private,
+# and a reusable workflow in a private repo cannot be called by public repos
+# (researcher-profiles, and most future spokes) or by repos in other orgs
+# (pepkit, refgenie, bedbase). This repo is public. It holds no secrets: the
+# job runs in the calling repo, with the caller's DOCS_DISPATCH_TOKEN.
+#
+# Spokes reference this as `@master` on purpose: pinning a SHA would mean
+# editing every spoke repo for any change here.
+
+on:
+  workflow_call:
+    inputs:
+      site:
+        description: 'Site slug as registered in doc-hubs sites.toml (e.g. village)'
+        required: true
+        type: string
+      spoke:
+        description: 'Spoke slug as registered in hubs/<site>/spokes.toml'
+        required: true
+        type: string
+    secrets:
+      DOCS_DISPATCH_TOKEN:
+        description: 'Fine-grained PAT, Contents read+write on databio/doc-hubs'
+        required: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Nothing here touches the caller's repo, so the automatic GITHUB_TOKEN gets
+    # no scopes at all. The only credential in this job is the PAT below.
+    permissions: {}
+    steps:
+      # A missing or unshared org secret arrives as an empty string, which `gh`
+      # would report as an opaque HTTP 401/404 against a repo that does exist.
+      # Name the real problem instead.
+      - name: Check the dispatch token is present
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::DOCS_DISPATCH_TOKEN is empty in ${{ github.repository }}."
+            echo "::error::Add this repo to the databio org secret's selected repositories."
+            exit 1
+          fi
+
+      - name: Dispatch docs-updated to databio/doc-hubs
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+          # Inputs go through the environment, never interpolated into the
+          # shell line, so a slug can never become a command.
+          SITE: ${{ inputs.site }}
+          SPOKE: ${{ inputs.spoke }}
+          SHA: ${{ github.sha }}
+        run: |
+          gh api repos/databio/doc-hubs/dispatches \
+            -f event_type=docs-updated \
+            -f "client_payload[site]=$SITE" \
+            -f "client_payload[spoke]=$SPOKE" \
+            -f "client_payload[sha]=$SHA"
+          echo "Dispatched: site=$SITE spoke=$SPOKE sha=$SHA" >> "$GITHUB_STEP_SUMMARY"
