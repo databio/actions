@@ -1,0 +1,41 @@
+name: Ruff
+
+# Reusable workflow: the one lint job every databio Python repo calls, so all
+# repos run ruff the same way. A caller's lint job is just:
+#
+#   lint:
+#     uses: databio/actions/.github/workflows/ruff.yml@master
+#
+# It runs `ruff check` and `ruff format --check` from the repo root, so the
+# caller's own ruff.toml / pyproject.toml sets the rules. ruff-action installs
+# a prebuilt ruff binary: no Python setup, no pip install.
+#
+# The ruff version is pinned HERE, once, for every repo. Bump the default below
+# to move all repos at once. A repo that must differ passes `version:`.
+#
+# Callers reference this as `@master` on purpose, like notify-doc-hub.yml.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Ruff version to install (e.g. 0.17.1); default is the org-wide pin'
+        required: false
+        type: string
+        default: '0.17.1'
+
+permissions:
+  contents: read
+
+jobs:
+  ruff:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/ruff-action@v4.1.0
+        with:
+          version: ${{ inputs.version }}
+          args: "--version"
+      - run: ruff check .
+      - run: ruff format --check .
