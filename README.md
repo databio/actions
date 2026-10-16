@@ -19,6 +19,7 @@ GitHub offers two kinds of shared code, and this repo holds both:
 | Name | Kind | What it does |
 |------|------|--------------|
 | `notify-doc-hub.yml` | reusable workflow | Tells [databio/doc-hubs](https://github.com/databio/doc-hubs) that a spoke's docs changed, so that site rebuilds |
+| `ruff.yml` | reusable workflow | Lints a Python repo with ruff (`ruff check` and `ruff format --check`), using one org-wide ruff version |
 
 ### notify-doc-hub.yml
 
@@ -52,3 +53,42 @@ with several spokes) is in the doc-hubs README, "Add a spoke".
 Callers use `@master`, so a change here reaches every caller at once. Keep
 changes backward compatible with the `site` / `spoke` inputs, or update
 doc-hubs' `deploy.yml` in step.
+
+### ruff.yml
+
+The one lint job for every databio Python repo. A repo's lint workflow is just:
+
+```yaml
+name: Lint
+
+on: [push, pull_request]
+
+jobs:
+  lint:
+    name: Lint
+    uses: databio/actions/.github/workflows/ruff.yml@master
+```
+
+It runs `ruff check .` and `ruff format --check .` from the repo root, so the
+rules come from the repo's own `ruff.toml` or `pyproject.toml`. Ruff is
+installed with `astral-sh/ruff-action` (a prebuilt binary), so there is no
+Python setup or pip install, and the job takes a few seconds.
+
+**Ruff version.** The default version is set once, in `ruff.yml`. Bump that
+default to move every repo to a new ruff at once. A repo that must stay on a
+different version overrides it:
+
+```yaml
+  lint:
+    uses: databio/actions/.github/workflows/ruff.yml@master
+    with:
+      version: "0.17.0"
+```
+
+**Skip tests when lint fails.** Inside the same workflow file, make the test
+job wait on lint, so a lint failure does not also spend minutes on tests:
+
+```yaml
+  test:
+    needs: lint
+```
