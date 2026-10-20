@@ -1,0 +1,47 @@
+name: Codon notify
+description: Send a job's status to Discord through Codon (codon.databio.org).
+
+inputs:
+  api-key:
+    description: Codon caller key. Pass secrets.CODON_API_KEY.
+    required: true
+  status:
+    description: The job's status. Pass job.status (success, failure or cancelled).
+    required: true
+  message:
+    description: Short name for the job, such as "BEDbase metadata snapshot".
+    required: true
+  details:
+    description: Optional extra text, such as a file URL or a row count.
+    required: false
+    default: ""
+  url:
+    description: Codon notify endpoint.
+    required: false
+    default: https://codon.databio.org/notify
+
+runs:
+  using: composite
+  steps:
+    - name: Send Codon notification
+      shell: bash
+      env:
+        CODON_API_KEY: ${{ inputs.api-key }}
+        CODON_URL: ${{ inputs.url }}
+        STATUS: ${{ inputs.status }}
+        MESSAGE: ${{ inputs.message }}
+        DETAILS: ${{ inputs.details }}
+        REPO: ${{ github.repository }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        text="${MESSAGE} ${STATUS} (${REPO})"
+        if [ -n "$DETAILS" ]; then text="${text}"$'\n'"${DETAILS}"; fi
+        text="${text}"$'\n'"${RUN_URL}"
+        # Discord caps a message at 2000 characters.
+        body=$(jq -n --arg text "$text" '{text: $text[0:2000]}')
+        # A notify failure only warns: a Codon outage should not mark a finished job as failed.
+        if ! curl -fsS --max-time 30 -X POST "$CODON_URL" \
+            -H "X-Api-Key: $CODON_API_KEY" -H "Content-Type: application/json" \
+            -d "$body" > /dev/null; then
+          echo "::warning::Codon notify failed; the job result is unchanged."
+        fi

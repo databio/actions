@@ -20,6 +20,7 @@ GitHub offers two kinds of shared code, and this repo holds both:
 |------|------|--------------|
 | `notify-doc-hub.yml` | reusable workflow | Tells [databio/doc-hubs](https://github.com/databio/doc-hubs) that a spoke's docs changed, so that site rebuilds |
 | `ruff.yml` | reusable workflow | Lints a Python repo with ruff (`ruff check` and `ruff format --check`), using one org-wide ruff version |
+| `codon-notify` | composite action | Sends a job's success or failure to Discord through [Codon](https://codon.databio.org) |
 
 ### notify-doc-hub.yml
 
@@ -92,3 +93,31 @@ job wait on lint, so a lint failure does not also spend minutes on tests:
   test:
     needs: lint
 ```
+
+### codon-notify
+
+Add it as the last step of a job. It sends one Discord message with the
+status, your message, the repo name and a link to the run:
+
+```yaml
+    steps:
+      # ... the job's real steps ...
+      - name: Notify Codon
+        if: always()
+        uses: databio/actions/codon-notify@master
+        with:
+          api-key: ${{ secrets.CODON_API_KEY }}
+          status: ${{ job.status }}
+          message: BEDbase metadata snapshot
+          details: https://example.org/snapshot.json   # optional
+```
+
+Pass `status: ${{ job.status }}` yourself: a composite action cannot read the
+job's status on its own. `CODON_API_KEY` is the calling repo's Codon caller
+key. `url` overrides the Codon endpoint (default
+`https://codon.databio.org/notify`). If Codon is down, the step prints a
+warning and the job keeps its real result.
+
+Use `if: always()` for rare jobs, such as monthly or quarterly archives, so a
+success message tells you the job ran. For daily jobs use `if: failure()`, so
+you only hear about it when something breaks.
