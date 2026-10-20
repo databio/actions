@@ -16,9 +16,8 @@ inputs:
     required: false
     default: ""
   url:
-    description: Codon notify endpoint.
-    required: false
-    default: https://codon.databio.org/notify
+    description: Codon notify endpoint. Pass secrets.CODON_NOTIFY_URL.
+    required: true
 
 runs:
   using: composite

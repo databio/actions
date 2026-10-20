@@ -107,6 +107,7 @@ status, your message, the repo name and a link to the run:
         uses: databio/actions/codon-notify@master
         with:
           api-key: ${{ secrets.CODON_API_KEY }}
+          url: ${{ secrets.CODON_NOTIFY_URL }}
           status: ${{ job.status }}
           message: BEDbase metadata snapshot
           details: https://example.org/snapshot.json   # optional
@@ -114,8 +115,8 @@ status, your message, the repo name and a link to the run:
 
 Pass `status: ${{ job.status }}` yourself: a composite action cannot read the
 job's status on its own. `CODON_API_KEY` is the calling repo's Codon caller
-key. `url` overrides the Codon endpoint (default
-`https://codon.databio.org/notify`). If Codon is down, the step prints a
+key. `CODON_NOTIFY_URL` is a databio org secret holding the endpoint, so the
+path stays out of public code. If Codon is down, the step prints a
 warning and the job keeps its real result.
 
 Use `if: always()` for rare jobs, such as monthly or quarterly archives, so a
