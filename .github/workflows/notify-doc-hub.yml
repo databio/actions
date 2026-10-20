@@ -1,13 +1,18 @@
 name: Notify doc hub
 
 # Reusable workflow: a spoke repo calls this when its docs change, and it fires
-# a `docs-updated` repository_dispatch at databio/doc-hubs, whose deploy.yml
-# routes on the `site` key and rebuilds that one site.
+# a `docs-updated` repository_dispatch at the repo that builds the site. It
+# reads doc-hubs' sites.toml to find that repo: databio/doc-hubs for a site
+# built there (its deploy.yml routes on the `site` key and rebuilds that one
+# site), or the site's own `repo` for an external hub (`deploy = "dispatch"`,
+# e.g. lab -> databio/lab.databio.org).
 #
 # Spokes hold NO dispatch logic. A spoke's notify-docs.yml names its site and
 # spoke and nothing else; the endpoint, the event type, and the payload shape
-# live here. The payload is consumed by doc-hubs' deploy.yml, so changing it
-# means editing this file and that one together.
+# live here. The payload is consumed by doc-hubs' deploy.yml AND by each
+# external hub's deploy workflow (today databio/lab.databio.org
+# deploy-cloudflare.yml), so changing it means editing this file and all of
+# those together.
 #
 # Why this lives in databio/actions and not in doc-hubs: doc-hubs is private,
 # and a reusable workflow in a private repo cannot be called by public repos
@@ -31,7 +36,7 @@ on:
         type: string
     secrets:
       DOCS_DISPATCH_TOKEN:
-        description: 'Fine-grained PAT, Contents read+write on databio/doc-hubs'
+        description: 'Fine-grained PAT. Contents read on databio/doc-hubs; Contents read+write on the target hub repo'
         required: true
 
 jobs:
@@ -55,7 +60,32 @@ jobs:
             exit 1
           fi
 
-      - name: Dispatch docs-updated to databio/doc-hubs
+      # sites.toml is the single source of truth for where a site is built, so
+      # spoke notifier files never change when a site moves.
+      - name: Find the repo that builds the site
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+          SITE: ${{ inputs.site }}
+        run: |
+          gh api repos/databio/doc-hubs/contents/sites.toml \
+            -H 'Accept: application/vnd.github.raw' > "$RUNNER_TEMP/sites.toml"
+          python3 - "$RUNNER_TEMP/sites.toml" <<'PY'
+          import os, sys, tomllib
+          with open(sys.argv[1], 'rb') as fh:
+              sites = tomllib.load(fh).get('site', [])
+          slug = os.environ['SITE']
+          site = next((s for s in sites if s.get('slug') == slug), None)
+          if site is None:
+              known = ', '.join(s.get('slug', '?') for s in sites)
+              print(f"::error::site {slug!r} is not in databio/doc-hubs sites.toml (it has: {known})")
+              sys.exit(1)
+          target = site['repo'] if site.get('deploy') == 'dispatch' else 'databio/doc-hubs'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f"target={target}\n")
+          PY
+
+      - name: Dispatch docs-updated to ${{ steps.target.outputs.target }}
         env:
           GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
           # Inputs go through the environment, never interpolated into the
@@ -63,10 +93,11 @@ jobs:
           SITE: ${{ inputs.site }}
           SPOKE: ${{ inputs.spoke }}
           SHA: ${{ github.sha }}
+          TARGET: ${{ steps.target.outputs.target }}
         run: |
-          gh api repos/databio/doc-hubs/dispatches \
+          gh api "repos/${TARGET}/dispatches" \
             -f event_type=docs-updated \
             -f "client_payload[site]=$SITE" \
             -f "client_payload[spoke]=$SPOKE" \
             -f "client_payload[sha]=$SHA"
-          echo "Dispatched: site=$SITE spoke=$SPOKE sha=$SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Dispatched: site=$SITE spoke=$SPOKE sha=$SHA target=$TARGET" >> "$GITHUB_STEP_SUMMARY"
